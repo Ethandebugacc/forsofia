@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Lily Bouquet</title>
+<style>
+  html, body {
+    margin: 0; width: 100%; height: 100%;
+    overflow: hidden; background: #000;
+    overscroll-behavior: none; touch-action: none;
+    -webkit-user-select: none; user-select: none; -webkit-text-size-adjust: 100%;
+  }
+  #art {
+    position: fixed; left: 0; top: 0; margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 16px; line-height: 1.12; white-space: pre;
+    transform-origin: 0 0;
+  }
+  /* lily petals, deepest throat to brightest highlight */
+  #art .d1 { color: #9b0c50; }
+  #art .d2 { color: #c81f63; }
+  #art .m  { color: #e8428a; }
+  #art .p  { color: #f97fb3; }
+  #art .l  { color: #ffbad6; }
+  #art .hi { color: #fff2f8; }
+  #art .edge    { color: #7d0d44; }
+  #art .inedge  { color: #b0205e; }
+  #art .in1     { color: #d63a80; }
+  #art .in2     { color: #ff9fc8; }
+  #art .vein    { color: #c42f70; }
+  #art .spot    { color: #8a1748; }
+  /* stamens and pistil */
+  #art .pistil   { color: #ffc233; text-shadow: 0 0 4px rgba(255, 194, 51, .6); }
+  #art .filament { color: #f2c04d; }
+  #art .anther   { color: #ffb000; }
+  /* stems and leaves */
+  #art .stemhi   { color: #8fd694; }
+  #art .stem     { color: #3f9a4a; }
+  #art .leafhi  { color: #7ccc84; }
+  #art .leaf    { color: #3fa355; }
+  #art .leafd   { color: #2a7a3a; }
+  #art .leafdd  { color: #1d5a2a; }
+  #art .leafvein{ color: #bdeab8; }
+  /* ribbon and paper wrap */
+  #art .ribbon   { color: #7b4fd0; }
+  #art .ribbonhi { color: #b89bff; }
+  #art .wrap     { color: #d9b06e; }
+  #art .wrap2    { color: #efd09a; }
+  #art .wrapd    { color: #9a7440; }
+  /* babies' breath and sparkles keep their symbols */
+  #art .breath  { color: #9a9a9a; }
+  #art .breath2 { color: #e6e6e6; }
+  #art .spark   { color: #ffc107; text-shadow: 0 0 6px rgba(255, 193, 7, .7); }
+  #art .spark2  { color: #ffe082; }
+  #art .spark3  { color: #7fa0ff; }
+</style>
+</head>
+<body>
+<pre id="art" aria-label="Animated ASCII lily bouquet"></pre>
+
+<script>
+(() => {
+  // Scene is designed in base units (100 x 48). K multiplies the grid for finer detail.
+  // Smaller grid on phones so the animation stays smooth
+  const SMALL = Math.min(window.innerWidth, window.innerHeight) < 600;
+  const K = SMALL ? 1.3 : 1.8;
+  const W = Math.round(100 * K), H = Math.round(48 * K);
+  const SOFIA = 'Sofia';
+  const BASE = [50, 41];
+
+  // Deterministic hash keeps the scene stable from frame to frame
+  function hash(x, y, k) {
+    let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(k, 2246822519);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  }
+
+  const HEADS = [
+    { x: 36, y: 8,  R: 8,  id: 1, amp: 0.8, sw: 0.0 },
+    { x: 65, y: 7,  R: 7,  id: 2, amp: 0.8, sw: 1.3 },
+    { x: 13, y: 13, R: 7,  id: 3, amp: 0.6, sw: 2.1, bud: true },
+    { x: 87, y: 12, R: 7,  id: 4, amp: 0.6, sw: 3.4, bud: true },
+    { x: 26, y: 22, R: 10, id: 5, amp: 1.0, sw: 0.7 },
+    { x: 74, y: 21, R: 10, id: 6, amp: 1.0, sw: 2.6 },
+    { x: 50, y: 16, R: 12, id: 7, amp: 0.5, sw: 4.0 }
+  ];
+
+  const LEAVES = [
+    { p0: [48, 40], p1: [32, 47], p2: [12, 38], w: 2.8, ph: 0.0 },
+    { p0: [52, 40], p1: [68, 47], p2: [88, 38], w: 2.8, ph: 1.1 },
+    { p0: [48, 41], p1: [38, 33], p2: [24, 31], w: 2.0, ph: 2.0 },
+    { p0: [52, 41], p1: [62, 33], p2: [76, 30], w: 2.0, ph: 3.0 },
+    { p0: [49, 42], p1: [44, 47], p2: [36, 45], w: 1.6, ph: 4.0 },
+    { p0: [51, 42], p1: [57, 47], p2: [64, 45], w: 1.6, ph: 5.0 }
+  ];
+
+  const SPARKS = [[4,2],[18,1],[33,0],[47,2],[60,1],[75,3],[93,2],[96,9],
+                  [2,21],[98,26],[8,32],[90,33],[20,28],[80,28],[41,4],[57,8]];
+  const SYM = ['+', '*', '·'];
+  const SPARK_CLS = ['spark', 'spark2', 'spark3'];
+
+  // Babies' breath: fixed scatter, avoiding the blooms
+  const BREATH = [];
+  for (let i = 0; BREATH.length < 520 && i < 8000; i++) {
+    const x = hash(i, 11, 3) * 100;
+    const y = hash(i, 12, 5) * 34;
+    if (y < 1) continue;
+    if (HEADS.some(h => Math.hypot(x - h.x, (y - h.y) * 2) < h.R * 1.25 + 1.5)) continue;
+    BREATH.push({ x, y, ch: hash(i, 13, 7) > 0.55 ? '°' : '·', ph: hash(i, 15, 1) * 6.28 });
+  }
+
+  const newGrid = () => Array.from({ length: H }, () => new Array(W).fill(null));
+
+  function setCell(g, gx, gy, cls, isDeco, ch) {
+    if (gx >= 0 && gy >= 0 && gx < W && gy < H) g[gy][gx] = { cls, deco: isDeco, ch };
+  }
+  // Base-unit point -> grid cell
+  function put(g, x, y, cls) {
+    setCell(g, Math.floor(x * K), Math.floor(y * K), cls, false, null);
+  }
+  function deco(g, x, y, ch, cls) {
+    setCell(g, Math.floor(x * K), Math.floor(y * K), cls, true, ch);
+  }
+
+  function stem(g, p0, p1, p2, off, cls) {
+    for (let i = 0; i <= 500; i++) {
+      const t = i / 500, u = 1 - t;
+      put(g,
+        u*u*p0[0] + 2*u*t*p1[0] + t*t*p2[0] + off,
+        u*u*p0[1] + 2*u*t*p1[1] + t*t*p2[1],
+        cls);
+    }
+  }
+
+  function leaf(g, p0, p1, p2, w) {
+    for (let i = 0; i <= 240; i++) {
+      const t = i / 240, u = 1 - t;
+      const cx = u*u*p0[0] + 2*u*t*p1[0] + t*t*p2[0];
+      const cy = u*u*p0[1] + 2*u*t*p1[1] + t*t*p2[1];
+      const tx = 2*u*(p1[0]-p0[0]) + 2*t*(p2[0]-p1[0]);
+      const ty = 2*u*(p1[1]-p0[1]) + 2*t*(p2[1]-p1[1]);
+      const len = Math.hypot(tx, ty) || 1;
+      const nx = -ty / len, ny = tx / len;
+      const hw = w * Math.pow(Math.sin(Math.PI * t), 0.7);
+      for (let s = -hw; s <= hw; s += 0.25) {
+        const cls = Math.abs(s) < 0.4 ? 'leafvein'
+                  : s < -hw * 0.45 ? 'leafhi'
+                  : s < 0 ? 'leaf'
+                  : s < hw * 0.45 ? 'leafd' : 'leafdd';
+        put(g, cx + nx * s, cy + ny * s, cls);
+      }
+    }
+  }
+
+  // Ring (outline) helper in base units, iterated per grid cell
+  function ring(g, cx, cy, rx, ry, inner, cls) {
+    const x0 = Math.floor((cx - rx) * K), x1 = Math.ceil((cx + rx) * K);
+    const y0 = Math.floor((cy - ry) * K), y1 = Math.ceil((cy + ry) * K);
+    for (let gy = y0; gy <= y1; gy++)
+      for (let gx = x0; gx <= x1; gx++) {
+        const x = (gx + 0.5) / K, y = (gy + 0.5) / K;
+        const d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
+        if (d <= 1 && d >= inner) setCell(g, gx, gy, cls, false, null);
+      }
+  }
+
+  // Lily bloom: six outer tepals, three inner tepals, filaments with anthers, pistil
+  function bloom(g, cx, cy, R, rot, sc, id) {
+    const Rs = R * sc;
+    const x0 = Math.max(0, Math.floor((cx - R * 1.3) * K)), x1 = Math.min(W - 1, Math.ceil((cx + R * 1.3) * K));
+    const y0 = Math.max(0, Math.floor((cy - R) * K)), y1 = Math.min(H - 1, Math.ceil((cy + R) * K));
+    for (let gy = y0; gy <= y1; gy++)
+      for (let gx = x0; gx <= x1; gx++) {
+        const x = (gx + 0.5) / K, y = (gy + 0.5) / K;
+        const dx = x - cx, dy = (y - cy) * 2;             // aspect-corrected
+        const r = Math.hypot(dx, dy);
+        const a = Math.atan2(dy, dx) - rot;
+        const c3 = Math.abs(Math.cos(3 * a));
+        const s3 = Math.abs(Math.sin(3 * a));
+        const Lo = Rs * (0.3 + 0.7 * Math.pow(c3, 0.45));          // outer tepals
+        const Li = Rs * 0.62 * (0.35 + 0.65 * Math.pow(s3, 0.5));  // inner tepals
+        if (r > Math.max(Lo, Li) + 0.7) continue;
+
+        const f = r / Lo;
+        const lum = f + 0.15 * Math.cos(a + 2.4);                  // light from upper left
+        const streak = Math.sin(a * 40 + id * 3) > 0.55;           // fine radial striations
+        const mod = ((a % (Math.PI / 3)) + Math.PI / 3) % (Math.PI / 3);
+        const dA = Math.min(mod, Math.PI / 3 - mod);               // distance to petal axis
+        let cls;
+
+        if (r < Rs * 0.16) cls = 'pistil';
+        else if (r < Rs * 0.62 && dA < 0.12) cls = 'filament';
+        else if (r >= Rs * 0.5 && r < Rs * 0.64 && dA < 0.2) cls = 'anther';
+        else if (r < Li && Math.abs(r - Li) < 0.5) cls = 'inedge';
+        else if (r < Li) {
+          cls = s3 > 0.95 ? 'vein' : lum < 0.5 ? 'in1' : lum < 0.8 ? 'in2' : 'hi';
+        }
+        else if (r >= Lo - 0.9 && r <= Lo + 0.7) cls = 'edge';
+        else if (r > Lo + 0.7) continue;
+        else if (c3 > 0.94 && r > Rs * 0.3) cls = 'vein';
+        else if (hash(gx, gy, id) > 0.95 && f > 0.4 && f < 0.85) cls = 'spot';
+        else {
+          const L2 = lum + (streak ? 0.1 : 0);
+          cls = L2 < 0.3 ? 'd1' : L2 < 0.5 ? 'd2' : L2 < 0.7 ? 'm' : L2 < 0.85 ? 'p' : L2 < 1.0 ? 'l' : 'hi';
+        }
+
+        g[gy][gx] = { cls, deco: false, ch: null };
+      }
+  }
+
+  // Closed bud with a seam, shaded sides, a highlight, and two green sepals
+  function bud(g, cx, cy, R) {
+    const rx = R * 0.55, ry = R * 0.72;
+    const x0 = Math.max(0, Math.floor((cx - rx - 1) * K)), x1 = Math.min(W - 1, Math.ceil((cx + rx + 1) * K));
+    const y0 = Math.max(0, Math.floor((cy - ry) * K)), y1 = Math.min(H - 1, Math.ceil((cy + ry) * K));
+    for (let gy = y0; gy <= y1; gy++)
+      for (let gx = x0; gx <= x1; gx++) {
+        const x = (gx + 0.5) / K, y = (gy + 0.5) / K;
+        const v = (y - cy) / ry;
+        if (v < -1 || v > 1.05) continue;
+        const side = v < 0 ? 0.42 + 0.58 * (1 + v) : 1;
+        const hw = rx * Math.sqrt(Math.max(0, 1 - v * v)) * side;
+        const dx = x - cx, ad = Math.abs(dx);
+        if (ad > hw + 0.5) continue;
+        let cls;
+        if (ad > hw - 0.6) cls = 'edge';
+        else {
+          const f = dx / (hw || 1);
+          cls = f < -0.45 ? 'd2' : f < 0 ? 'm' : f < 0.45 ? 'p' : 'l';
+          if (Math.abs(f + 0.05) < 0.08 && v > -0.4) cls = 'vein';
+          if (f > 0.6 && v < -0.2) cls = 'hi';
+        }
+        g[gy][gx] = { cls, deco: false, ch: null };
+      }
+    leaf(g, [cx, cy + ry * 0.8], [cx - rx * 1.2, cy + ry * 0.5], [cx - rx * 1.6, cy + ry * 1.7], 0.9);
+    leaf(g, [cx, cy + ry * 0.8], [cx + rx * 1.2, cy + ry * 0.5], [cx + rx * 1.6, cy + ry * 1.7], 0.9);
+  }
+
+  // Paper wrap cone with vertical pleats and darker edges
+  function wrap(g) {
+    for (let gy = Math.floor(41 * K); gy < H; gy++) {
+      const y = (gy + 0.5) / K;
+      const hw = 2.5 + (y - 41) * 1.5;
+      for (let gx = Math.floor((50 - hw) * K); gx <= Math.ceil((50 + hw) * K); gx++) {
+        const x = (gx + 0.5) / K, dx = x - 50;
+        const cls = Math.abs(dx) > hw - 0.7 ? 'wrapd'
+                  : Math.floor(dx * 1.6 + 50) % 2 === 0 ? 'wrap' : 'wrap2';
+        setCell(g, gx, gy, cls, false, null);
+      }
+    }
+  }
+
+  function ribbon(g) {
+    for (let x = 44; x <= 56; x += 0.25) put(g, x, 41, 'ribbon');
+    ring(g, 45, 39, 3.6, 2.2, 0.35, 'ribbonhi');
+    ring(g, 55, 39, 3.6, 2.2, 0.35, 'ribbon');
+    stem(g, [50, 42], [47, 44], [45, 47], 0, 'ribbonhi');
+    stem(g, [50, 42], [53, 44], [55, 47], 0, 'ribbon');
+  }
+
+  function headX(h, t) { return h.x + Math.sin(t * 0.8 + h.sw) * h.amp; }
+  function attachY(h) { return h.bud ? h.y + h.R * 0.72 + 1 : h.y + h.R * 0.55; }
+
+  function frame(t) {
+    const g = newGrid();
+
+    // Babies' breath twinkles in place
+    for (const p of BREATH)
+      deco(g, p.x, p.y, p.ch, Math.sin(t * 1.4 + p.ph) > 0.3 ? 'breath2' : 'breath');
+
+    // Stems: two strands with a highlight for thickness
+    for (const h of HEADS) {
+      const hx = headX(h, t), ay = attachY(h);
+      const sway = Math.sin(t * 0.8 + h.sw) * 0.9;
+      const c = [BASE[0] + (hx - BASE[0]) * 0.3 + sway, (BASE[1] + ay) / 2 + 2];
+      stem(g, BASE, c, [hx, ay], -0.6, 'stemhi');
+      stem(g, BASE, c, [hx, ay], 0.6, 'stem');
+    }
+
+    // Leaves with drifting tips
+    for (const L of LEAVES) {
+      const tip = [L.p2[0] + Math.sin(t * 0.9 + L.ph) * 1.6, L.p2[1] + Math.cos(t * 0.9 + L.ph) * 0.6];
+      leaf(g, L.p0, L.p1, tip, L.w);
+    }
+
+    wrap(g);
+    ribbon(g);
+
+    // Blooms and buds, back to front
+    for (const h of HEADS) {
+      const hx = headX(h, t);
+      if (h.bud) bud(g, hx, h.y, h.R);
+      else bloom(g, hx, h.y, h.R, 0.09 * Math.sin(t * 0.55 + h.id), 1 + 0.03 * Math.sin(t * 1.1 + h.id), h.id);
+    }
+
+    // Sparkles only fill empty space
+    SPARKS.forEach(([x, y], i) => {
+      const gx = Math.floor(x * K), gy = Math.floor(y * K);
+      if (gy < H && gx < W && g[gy][gx]) return;
+      const v = Math.sin(t * 2.2 + i * 1.9);
+      const idx = v > 0.5 ? 0 : v > -0.2 ? 1 : 2;
+      deco(g, x, y, SYM[idx], SPARK_CLS[idx]);
+    });
+
+    return g;
+  }
+
+  // ---- Rendering ----
+  const pre = document.getElementById('art');
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  function renderRow(row) {
+    let html = '', run = '', cur = null;
+    for (let x = 0; x <= W; x++) {
+      const c = x < W ? row[x] : null;
+      const cls = c ? c.cls : null;
+      if (x === W || cls !== cur) {
+        if (run) html += cur ? `<span class="${cur}">${esc(run)}</span>` : esc(run);
+        run = ''; cur = cls;
+      }
+      if (x < W) run += c ? (c.deco ? c.ch : SOFIA[x % 5]) : ' ';
+    }
+    return html;
+  }
+
+  function render(g) {
+    pre.innerHTML = g.map(renderRow).join('\n');
+  }
+
+  // Stretch the fixed-size art to exactly fill the window
+  function fit() {
+    const sw = pre.offsetWidth, sh = pre.offsetHeight;   // layout size, unaffected by transform
+    if (!sw || !sh) return;
+    const vv = window.visualViewport;
+    const vw = vv ? vv.width : window.innerWidth;
+    const vh = vv ? vv.height : window.innerHeight;
+    if (vh > vw) {
+      // Portrait phone: keep the bouquet undistorted, fit its width, and center it on black
+      const s = (vw * 0.96) / sw;
+      const dx = (vw - sw * s) / 2, dy = (vh - sh * s) / 2;
+      pre.style.transform = `translate(${dx}px, ${dy}px) scale(${s})`;
+    } else {
+      pre.style.transform = `scale(${vw / sw}, ${vh / sh})`;
+    }
+  }
+  window.addEventListener('resize', fit);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', fit);
+
+  let t = 0;
+  function step() { render(frame(t)); t += 0.12; }
+  step();
+  fit();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+  setInterval(step, SMALL ? 120 : 90);
+})();
+</script>
+</body>
+</html>
